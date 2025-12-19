@@ -4,7 +4,10 @@ pipeline {
     stages {
         stage('Run tests') {
             steps {
-                sh 'pytest test_calculs.py'
+                sh '''
+                source /opt/venv/bin/activate
+                pytest test_calculs.py
+                '''
             }
         }
     }
