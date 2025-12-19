@@ -5,8 +5,7 @@ pipeline {
         stage('Run tests') {
             steps {
                 sh '''
-                source /opt/venv/bin/activate
-                pytest test_calculs.py
+                bash -c "source /opt/venv/bin/activate && pytest test_calculs.py"
                 '''
             }
         }
