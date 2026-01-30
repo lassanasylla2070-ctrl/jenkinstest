@@ -1,44 +1,71 @@
 pipeline {
-    agent any
+  agent any
 
-    stages {
-        // Étape 1 : construire l'image Docker
-        stage('Build Docker image') {
-            steps {
-                sh 'docker build -t my-python-app:latest .'
-            }
-        }
+  environment {
+    VM2_HOST = "192.168.56.104"
+    VM2_USER = "lassanavm2"
 
-        // Étape 2 : exécuter les tests dans le conteneur Docker
-        stage('Run tests') {
-            steps {
-                sh 'docker run --rm my-python-app pytest --junitxml=report.xml'
-            }
-        }
+    APP_NAME = "simple-flask-app"
+    CONTAINER_NAME = "simple-flask-app-v2"
 
-        // Étape 3 (optionnel) : pousser l'image Docker si les tests réussissent
-        stage('Push Docker image') {
-            when {
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
-            }
-            steps {
-                sh 'docker tag my-python-app:latest my-registry/my-python-app:1.0.0'
-                sh 'docker push my-registry/my-python-app:1.0.0'
-            }
-        }
+    VM2_PORT = "5002"
+    CONTAINER_PORT = "5000"
+
+    IMAGE_TAG = "${BUILD_NUMBER}"
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        checkout scm
+        sh 'ls -la'
+      }
     }
 
-    post {
-        // Affichage des résultats des tests dans Jenkins
-        always {
-            junit 'report.xml'
-        }
-        success {
-            echo 'Pipeline terminé avec succès !'
-        }
-        failure {
-            echo 'Pipeline échoué !'
-        }
+    stage('Build Docker image (VM1)') {
+      steps {
+        sh '''
+          echo "Building Docker image..."
+          docker build --no-cache -t ${APP_NAME}:${IMAGE_TAG} .
+          docker images | head
+        '''
+      }
     }
+
+    stage('Transfer image to VM2') {
+      steps {
+        sh '''
+          echo "Sending image to VM2..."
+          docker save ${APP_NAME}:${IMAGE_TAG} | ssh -o StrictHostKeyChecking=no ${VM2_USER}@${VM2_HOST} "docker load"
+        '''
+      }
+    }
+
+    stage('Deploy on VM2') {
+      steps {
+        sh '''
+          ssh -o StrictHostKeyChecking=no ${VM2_USER}@${VM2_HOST} "
+
+            docker stop ${CONTAINER_NAME} || true
+            docker rm -f ${CONTAINER_NAME} || true
+
+            docker run -d \
+              --name ${CONTAINER_NAME} \
+              -p ${VM2_PORT}:${CONTAINER_PORT} \
+              ${APP_NAME}:${IMAGE_TAG}
+
+            docker ps | grep ${CONTAINER_NAME}
+          "
+        '''
+      }
+    }
+  }
+
+  post {
+    always {
+      sh 'docker ps || true'
+    }
+  }
 }
 
